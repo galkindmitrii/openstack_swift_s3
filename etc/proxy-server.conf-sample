@@ -1,0 +1,5 @@
+[pipeline:main]
+pipeline = swifts3 s3token keystone proxy-server
+
+[filter:swifts3]
+use = egg:swifts3#swifts3

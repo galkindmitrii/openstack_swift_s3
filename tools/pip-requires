@@ -1,0 +1,9 @@
+argparse
+httplib2
+prettytable>=0.6,<0.7
+simplejson
+eventlet
+-e git+ssh://gitolite@gitolite.mirantis.com/openstack-ci/swift.git#egg=swift
+netifaces
+xattr
+webob
