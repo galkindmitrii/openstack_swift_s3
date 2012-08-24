@@ -657,7 +657,7 @@ class MultiPartObjectController(object):
 
             try:
                 int(upload_id, 16)
-            except TypeError:
+            except (TypeError, ValueError):
                 return get_err_response('InvalidURI')
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
@@ -738,7 +738,7 @@ class MultiPartObjectController(object):
 
         try:
             int(upload_id, 16)
-        except TypeError:
+        except (TypeError, ValueError):
             return get_err_response('InvalidURI')
 
         if not part_number.isdigit():
@@ -792,7 +792,7 @@ class MultiPartObjectController(object):
 
         try:
             int(upload_id, 16)
-        except TypeError:
+        except (TypeError, ValueError):
             return get_err_response('InvalidURI')
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
