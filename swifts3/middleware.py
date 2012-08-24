@@ -67,6 +67,7 @@ import simplejson as json
 
 from swift.common.utils import split_path
 
+
 #XXX: In webob-1.9b copied environ contained link to original
 #     instance of TrackableMultiDict which reflect to original
 #     request.
@@ -186,7 +187,7 @@ def canonical_string(req):
 
     # don't include anything after the first ? in the resource...
     # unless it is one of the QSA of interest, defined above
-    parts =  req.path_qs.split('?')
+    parts = req.path_qs.split('?')
     buf += parts[0]
 
     if len(parts) > 1:
@@ -194,7 +195,7 @@ def canonical_string(req):
         qsa = [a.split('=', 1) for a in qsa]
         qsa = [unquote_v(a) for a in qsa if a[0] in qsa_of_interest]
         if len(qsa) > 0:
-            qsa.sort(cmp=lambda x,y:cmp(x[0], y[0]))
+            qsa.sort(cmp=lambda x, y: cmp(x[0], y[0]))
             qsa = ['='.join(a) for a in qsa]
             buf += '?'
             buf += '&'.join(qsa)
@@ -311,8 +312,8 @@ class BucketController(object):
                 "".join(['<Contents><Key>%s</Key><LastModified>%sZ</LastModif'\
                         'ied><ETag>%s</ETag><Size>%s</Size><StorageClass>STA'\
                         'NDARD</StorageClass></Contents>' %
-                        (xml_escape(i['name']), i['last_modified'][:-3], i['hash'],
-                           i['bytes'])
+                        (xml_escape(i['name']), i['last_modified'][:-3],
+                                                         i['hash'], i['bytes'])
                            for i in objects[:max_keys] if 'subdir' not in i]),
                 "".join(['<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>'
                          % xml_escape(i['subdir'])
@@ -455,7 +456,7 @@ class NormalObjectController(object):
         resp = req.get_response(self.app)
         status = resp.status_int
 
-        if status not in (200,204):
+        if status not in (200, 204):
             if status == 401:
                 return get_err_response('AccessDenied')
             elif status == 404:
@@ -514,10 +515,14 @@ class MultiPartObjectController(object):
         list_req.upath_info = cont_path
         list_req.GET.clear()
         list_req.GET['format'] = 'json'
-        list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name, self.object_name, upload_id)
+        list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name,
+                                                     self.object_name,
+                                                     upload_id)
         list_req.GET['limit'] = str(max_parts + 1)
         if part_number_marker:
-            list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name, upload_id, part_number_marker)
+            list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name,
+                                                        upload_id,
+                                                        part_number_marker)
 
         resp = list_req.get_response(self.app)
         status = resp.status_int
@@ -591,7 +596,6 @@ class MultiPartObjectController(object):
                 ))
         return Response(status=200, body=body, content_type='application/xml')
 
-
     def POST(self, req):
         """Initiate and complete multipart upload
         """
@@ -628,10 +632,13 @@ class MultiPartObjectController(object):
 
             meta_req = req.copy()
             meta_req.method = 'PUT'
-            meta_req.upath_info = "%s%s/%s/meta" % (cont_path, self.object_name, upload_id)
+            meta_req.upath_info = "%s%s/%s/meta" % (cont_path,
+                                                    self.object_name,
+                                                    upload_id)
             for header, value in meta_req.headers.items():
                 if header.lower().startswith('x-amz-meta-'):
-                    meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = value
+                    meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = \
+                                                                          value
 
             meta_resp = meta_req.get_response(self.app)
             status = meta_resp.status_int
@@ -651,7 +658,10 @@ class MultiPartObjectController(object):
                     '<UploadId>%s</UploadId>'
                     '</InitiateMultipartUploadResult>' %
                     (self.container_name, self.object_name, upload_id))
-            return Response(status=200, body=body, content_type='application/xml')
+            return Response(status=200,
+                            body=body,
+                            content_type='application/xml')
+
         elif 'uploadId' in req.GET:
             upload_id = req.GET.get('uploadId')
 
@@ -662,7 +672,9 @@ class MultiPartObjectController(object):
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
-            meta_path = "%s%s/%s/meta" % (cont_path, self.object_name, upload_id)
+            meta_path = "%s%s/%s/meta" % (cont_path,
+                                          self.object_name,
+                                          upload_id)
 
             meta_req = req.copy()
             meta_req.method = 'HEAD'
@@ -686,9 +698,10 @@ class MultiPartObjectController(object):
 
             # TODO: Validate uploaded parts.
 
-            manifest_path = MULTIPART_UPLOAD_PREFIX + "%s/%s/%s/part/" % (self.container_name,
-                                                                          self.object_name,
-                                                                          upload_id)
+            manifest_path = MULTIPART_UPLOAD_PREFIX + \
+                                       "%s/%s/%s/part/" % (self.container_name,
+                                                           self.object_name,
+                                                           upload_id)
 
             manifest_req = req.copy()
             manifest_req.method = 'PUT'
@@ -726,8 +739,14 @@ class MultiPartObjectController(object):
                     '<Key>%s</Key>'
                     '<ETag>%s</ETag>'
                     '</CompleteMultipartUploadResult>' %
-                    (self.orig_path_info, self.container_name, self.object_name, manifest_resp.headers['ETag']))
-            return Response(status=200, body=body, content_type='application/xml')
+                    (self.orig_path_info,
+                     self.container_name,
+                     self.object_name,
+                     manifest_resp.headers['ETag']))
+
+            return Response(status=200,
+                            body=body,
+                            content_type='application/xml')
         return get_err_response('InvalidURI')
 
     def PUT(self, req):
@@ -911,7 +930,11 @@ class Swift3Middleware(object):
 
         token = base64.urlsafe_b64encode(canonical_string(req))
 
-        controller = controller(req.environ, self.app, account, token, **path_parts)
+        controller = controller(req.environ,
+                                self.app,
+                                account,
+                                token,
+                                **path_parts)
 
         if hasattr(controller, req.method):
             res = getattr(controller, req.method)(req)
