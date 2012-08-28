@@ -546,10 +546,12 @@ class MultiPartObjectController(object):
             is_truncated = 'false'
 
         if next_marker:
-            next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % next_marker
+            next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % \
+                                                                    next_marker
 
         if part_number_marker:
-            part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % part_number_marker
+            part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % \
+                                                             part_number_marker
 
         parts = ''.join(("<Part>"
                          "<PartNumber>%s</PartNumber>"
@@ -562,38 +564,39 @@ class MultiPartObjectController(object):
                          obj['hash'],
                          obj['bytes']) for obj in objects))
 
-        body = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-                "<Bucket>%s</Bucket>"
-                "<Key>%s</Key>"
-                "<UploadId>%s</UploadId>"
-                "<Initiator>"
-                "<ID>%s</ID>"
-                "<DisplayName>%s</DisplayName>"
-                "</Initiator>"
-                "<Owner>"
-                "<ID>%s</ID>"
-                "<DisplayName>%s</DisplayName>"
-                "</Owner>"
-                "<StorageClass>STANDARD</StorageClass>"
-                "%s%s"
-                "<MaxParts>%s</MaxParts>"
-                "<IsTruncated>%s</IsTruncated>"
-                "%s"
-                "</ListPartsResult>" % (
-                self.container_name,
-                self.object_name,
-                upload_id,
-                self.account_name,
-                self.account_name,
-                self.account_name,
-                self.account_name,
-                part_number_marker,
-                next_marker,
-                max_parts,
-                is_truncated,
-                parts,
-                ))
+        body = (
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+          "<Bucket>%s</Bucket>"
+          "<Key>%s</Key>"
+          "<UploadId>%s</UploadId>"
+          "<Initiator>"
+          "<ID>%s</ID>"
+          "<DisplayName>%s</DisplayName>"
+          "</Initiator>"
+          "<Owner>"
+          "<ID>%s</ID>"
+          "<DisplayName>%s</DisplayName>"
+          "</Owner>"
+          "<StorageClass>STANDARD</StorageClass>"
+          "%s%s"
+          "<MaxParts>%s</MaxParts>"
+          "<IsTruncated>%s</IsTruncated>"
+          "%s"
+          "</ListPartsResult>" % (
+          self.container_name,
+          self.object_name,
+          upload_id,
+          self.account_name,
+          self.account_name,
+          self.account_name,
+          self.account_name,
+          part_number_marker,
+          next_marker,
+          max_parts,
+          is_truncated,
+          parts,
+          ))
         return Response(status=200, body=body, content_type='application/xml')
 
     def POST(self, req):
