@@ -24,6 +24,8 @@ from webob.exc import HTTPUnauthorized, HTTPCreated, HTTPNoContent,\
 import xml.dom.minidom
 import simplejson
 
+import mock
+
 from swifts3 import middleware as swift3
 
 
@@ -119,7 +121,12 @@ class FakeAppObject(FakeApp):
     def __init__(self, status=200):
         FakeApp.__init__(self)
         self.status = status
-        self.object_body = 'hello'
+        str_body = {"object": {"name": "mpu.bucket_new2",
+                               "last_modified": "2012-08-27T14:55:42.963Z",
+                               "hash": "1b2cf535f27731c974343645a3985328",
+                               "bytes": 123,
+                              }}
+        self.object_body = simplejson.dumps(str_body)
         self.response_headers = {'Content-Type': 'text/html',
                                  'Content-Length': len(self.object_body),
                                  'x-object-meta-test': 'swift',
@@ -167,6 +174,7 @@ def start_response(*args):
 class TestSwift3(unittest.TestCase):
     def setUp(self):
         self.app = swift3.filter_factory({})(FakeApp())
+        self.MULTIPART_UPLOAD_PREFIX = 'mpu.'
 
     def test_non_s3_request_passthrough(self):
         req = Request.blank('/something')
@@ -459,12 +467,11 @@ class TestSwift3(unittest.TestCase):
         local_app = swift3.filter_factory({})(FakeAppObject(201))
         req = Request.blank('/bucket/object',
                             environ={'REQUEST_METHOD': 'PUT'},
-                            headers=
-                                {
-                                'Authorization': 'AWS test:tester:hmac',
-                                'x-amz-storage-class': 'REDUCED_REDUNDANCY',
-                                'Content-MD5': 'Gyz1NfJ3Mcl0NDZFo5hTKA==',
-                                })
+                            headers={
+                                   'Authorization': 'AWS test:tester:hmac',
+                                   'x-amz-storage-class': 'REDUCED_REDUNDANCY',
+                                   'Content-MD5': 'Gyz1NfJ3Mcl0NDZFo5hTKA==',
+                                    })
         req.date = datetime.now()
         req.content_type = 'text/plain'
         resp = local_app(req.environ, local_app.app.do_start_response)
@@ -492,7 +499,7 @@ class TestSwift3(unittest.TestCase):
         req.content_type = 'text/plain'
         resp = local_app(req.environ, lambda *args: None)
         self.assertEquals(app.req.headers['ETag'],
-                    '7dfa07a8e59ddbcd1dc84d4c4f82aea1')
+                          '7dfa07a8e59ddbcd1dc84d4c4f82aea1')
         self.assertEquals(app.req.headers['X-Object-Meta-Something'], 'oh hai')
         self.assertEquals(app.req.headers['X-Copy-From'], '/some/source')
 
@@ -515,6 +522,22 @@ class TestSwift3(unittest.TestCase):
         resp = local_app(req.environ, local_app.app.do_start_response)
         self.assertEquals(local_app.app.response_args[0].split()[0], '204')
 
+        local_app = swift3.filter_factory({})(FakeAppObject(204))
+        req = Request.blank('/bucket/object',
+                            environ={'REQUEST_METHOD': 'DELETE'},
+                            headers={'Authorization': 'AWS test:tester:hmac',
+                                     'X-Object-Manifest': '123'})
+
+        class FakeResponse(object):
+            status_int = 200
+            headers = {'X-Object-Manifest': \
+                       'somefile_new2/18dc9b42566848abb58d8bb1ccbaf37a/'}
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse()
+            resp = local_app(req.environ, local_app.app.do_start_response)
+            self.assertEquals(local_app.app.response_args[0].split()[0], '204')
+
     def test_object_acl_GET(self):
         local_app = swift3.filter_factory({})(FakeAppObject())
         req = Request.blank('/bucket/object?acl',
@@ -522,6 +545,298 @@ class TestSwift3(unittest.TestCase):
                             headers={'Authorization': 'AWS test:tester:hmac'})
         resp = local_app(req.environ, local_app.app.do_start_response)
         self._check_acl('test:tester', resp)
+
+    def test_multipart_GET(self):
+        local_app = swift3.filter_factory({})(FakeAppObject(200))
+        bucket_name = 'bucket'
+        req = Request.blank('/%s/object?uploadId=deadbeef' % bucket_name,
+                            environ={'REQUEST_METHOD': 'GET'},
+                            headers={'Authorization': 'AWS test:tester:hmac'})
+
+#        class FakeResponse(object):
+#            status_int = 200
+#            body = {"object": {"name": "mpu.bucket_new_test"}}
+#            body = simplejson.dumps(body)
+#            headers = {'test': '123'}
+
+#        with mock.patch('webob.Request.get_response') as mocked:
+#            mocked.return_value = FakeResponse()
+#            code = self._test_method_error(
+#                       FakeAppObject,
+#                       'GET',
+#                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+#                       'bucket/object?uploadId=deadbeef',
+#                       401
+#                       )
+#            self.assertEquals(code, 'AccessDenied')
+
+#        resp = local_app(req.environ, local_app.app.do_start_response)
+#        self.assertEquals(local_app.app.response_args[0].split()[0], '200')
+
+#        dom = xml.dom.minidom.parseString("".join(resp))
+#        self.assertEquals(dom.firstChild.nodeName, 'ListBucketResult')
+#        name = dom.getElementsByTagName('Name')[0].childNodes[0].nodeValue
+#        self.assertEquals(name, bucket_name)
+
+#        objects = [n for n in dom.getElementsByTagName('Contents')]
+#        listing = [n for n in objects[0].childNodes if n.nodeName != '#text']
+
+#        names = []
+#        for o in objects:
+#            if o.childNodes[0].nodeName == 'Key':
+#                names.append(o.childNodes[0].childNodes[0].nodeValue)
+#            if o.childNodes[1].nodeName == 'LastModified':
+#                self.assertTrue(
+#                    o.childNodes[1].childNodes[0].nodeValue.endswith('Z'))
+
+#        self.assertEquals(len(names), len(FakeAppBucket().objects))
+#        for i in FakeAppBucket().objects:
+#            self.assertTrue(i[0] in names)
+
+    def test_multipart_GET_error(self):
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'GET',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   0
+                   )
+        self.assertEquals(code, 'NoSuchUpload')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'GET',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=123&part-number-marker=abc',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'GET',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=!@#12',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+    def test_multipart_POST(self):
+        class FakeResponse(object):
+            status_int = 201
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse()
+            local_app = swift3.filter_factory({})(FakeAppObject(201))
+            req = Request.blank('/' + self.MULTIPART_UPLOAD_PREFIX + \
+                                'bucket/object?uploads=123',
+                                environ={'REQUEST_METHOD': 'POST'},
+                                headers={'Authorization': \
+                                                      'AWS test:tester:hmac'})
+            resp = local_app(req.environ, local_app.app.do_start_response)
+            self.assertEquals(local_app.app.response_args[0].split()[0], '200')
+
+    def test_multipart_POST_error(self):
+        class FakeResponse204(object):
+            status_int = 204
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse204()
+            code = self._test_method_error(
+                       FakeAppService,
+                       'POST',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploads',
+                       0
+                       )
+            self.assertEquals(code, 'InvalidURI')
+
+        class FakeResponse404(object):
+            status_int = 404
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse404()
+            code = self._test_method_error(
+                       FakeAppService,
+                       'POST',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploads',
+                       404
+                       )
+            self.assertEquals(code, 'InvalidBucketName')
+
+            code = self._test_method_error(
+                       FakeAppService,
+                       'POST',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploadId=123',
+                       404
+                       )
+            self.assertEquals(code, 'NoSuchUpload')
+
+        code = self._test_method_error(
+                   FakeAppService,
+                   'POST',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploads',
+                   401
+                   )
+        self.assertEquals(code, 'AccessDenied')
+
+        code = self._test_method_error(
+                   FakeAppService,
+                   'POST',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploads',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppService,
+                   'POST',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   401
+                   )
+        self.assertEquals(code, 'AccessDenied')
+
+        code = self._test_method_error(
+                   FakeAppService,
+                   'POST',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppService,
+                   'POST',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=ad2@!',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        class FakeResponse200Headers(object):
+            status_int = 200
+            headers = {'X-Object-Meta-Finished': 'test'}
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse200Headers()
+            code = self._test_method_error(
+                       FakeAppObject,
+                       'POST',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploadId=deadbeef',
+                       0
+                       )
+            self.assertEquals(code, 'NoSuchUpload')
+
+        class FakeResponse200(object):
+            status_int = 200
+            headers = {"test": "test"}
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse200()
+            code = self._test_method_error(
+                       FakeAppObject,
+                       'POST',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploadId=deadbeef',
+                       0
+                       )
+            self.assertEquals(code, 'InvalidURI')
+
+    def test_multipart_PUT_error(self):
+        class FakeResponse(object):
+            status_int = 200
+            headers = {"test": "test"}
+
+        with mock.patch('webob.Request.get_response') as mocked:
+            mocked.return_value = FakeResponse()
+            code = self._test_method_error(
+                       FakeAppObject,
+                       'PUT',
+                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                       'bucket/object?uploadId=deadbeef&partNumber=1',
+                       0
+                       )
+            self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'PUT',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef&partNumber=1',
+                   0
+                   )
+        self.assertEquals(code, 'NoSuchUpload')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'PUT',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=#@!$',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'PUT',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=123',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'PUT',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef&partNumber=abc',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+    def test_multipart_DELETE_error(self):
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'DELETE',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=#@!$',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'DELETE',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   401
+                   )
+        self.assertEquals(code, 'AccessDenied')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'DELETE',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   404
+                   )
+        self.assertEquals(code, 'InvalidBucketName')
+
+        code = self._test_method_error(
+                   FakeAppObject,
+                   'DELETE',
+                   '/' + self.MULTIPART_UPLOAD_PREFIX + \
+                   'bucket/object?uploadId=deadbeef',
+                   0
+                   )
+        self.assertEquals(code, 'InvalidURI')
 
     def test_canonical_string(self):
         """
@@ -567,10 +882,10 @@ class TestSwift3(unittest.TestCase):
                 {'Content-Type': None,
                  'Date': 'Tue, 12 Jul 2011 10:52:57 +0000'})
 
-        req1 = Request.blank('/', headers=
-                {'Content-Type': None, 'X-Amz-Something': 'test'})
-        req2 = Request.blank('/', headers=
-                {'Content-Type': '', 'X-Amz-Something': 'test'})
+        req1 = Request.blank('/', headers={'Content-Type': None,
+                                           'X-Amz-Something': 'test'})
+        req2 = Request.blank('/', headers={'Content-Type': '',
+                                           'X-Amz-Something': 'test'})
         req3 = Request.blank('/', headers={'X-Amz-Something': 'test'})
 
         self.assertEquals(swift3.canonical_string(req1),
