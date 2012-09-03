@@ -482,7 +482,8 @@ class MultiPartObjectController(object):
                                              object_name)
 
     def GET(self, req):
-        """Listing multipart uploads
+        """
+        Lists the parts that have been uploaded for a specific multipart upload
         """
         upload_id = req.GET.get('uploadId')
         max_parts = req.GET.get('max-parts', '1000')
