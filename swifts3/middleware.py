@@ -238,7 +238,10 @@ class ServiceController(object):
             '</ListAllMyBucketsResult>' \
             % ("".join(['<Bucket><Name>%s</Name><CreationDate>' \
                          '2009-02-03T16:45:09.000Z</CreationDate></Bucket>' %
-                         xml_escape(i['name']) for i in containers]))
+                         xml_escape(i['name']) for i in containers if \
+                         not i['name'].startswith(MULTIPART_UPLOAD_PREFIX)]))
+                         # we shold not show multipart buckets here
+
         resp = Response(status=200, content_type='application/xml', body=body)
         return resp
 
