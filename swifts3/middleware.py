@@ -508,7 +508,7 @@ class MultiPartObjectController(object):
         meta_resp = meta_req.get_response(self.app)
         status = meta_resp.status_int
 
-        if status != 200 or 'X-Object-Meta-Finished' in meta_resp.headers:
+        if status != 200:
             return get_err_response('NoSuchUpload')
 
         list_req = req.copy()
@@ -696,9 +696,6 @@ class MultiPartObjectController(object):
                 else:
                     return get_err_response('InvalidURI')
 
-            if 'X-Object-Meta-Finished' in meta_resp.headers:
-                return get_err_response('NoSuchUpload')
-
             # TODO: Validate uploaded parts.
 
             manifest_path = MULTIPART_UPLOAD_PREFIX + \
@@ -719,15 +716,15 @@ class MultiPartObjectController(object):
 
             if status == 201:
                 finish_req = req.copy()
-                finish_req.method = 'PUT'
+                finish_req.method = 'DELETE'
                 finish_req.upath_info = meta_path
+                finish_req.body = ''
                 finish_req.GET.clear()
-                finish_req.headers['X-Object-Meta-Finished'] = 'True'
 
                 finish_resp = finish_req.get_response(self.app)
                 status = finish_resp.status_int
 
-            if status != 201:
+            if status not in (201, 204):
                 if status == 401:
                     return get_err_response('AccessDenied')
                 elif status == 404:
@@ -780,7 +777,7 @@ class MultiPartObjectController(object):
         meta_resp = meta_req.get_response(self.app)
         status = meta_resp.status_int
 
-        if status != 200 or 'X-Object-Meta-Finished' in meta_resp.headers:
+        if status != 200:
             return get_err_response('NoSuchUpload')
 
         req = req.copy()
