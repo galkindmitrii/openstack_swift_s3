@@ -500,6 +500,9 @@ class MultiPartObjectController(object):
             except (TypeError, ValueError):
                 return get_err_response('InvalidURI')
 
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('AccessDenied')
 
         elif 'uploadId' in req.GET:
             upload_id = req.GET.get('uploadId')
@@ -515,6 +518,11 @@ class MultiPartObjectController(object):
                 return get_err_response('InvalidURI')
 
             object_name_prefix_len = len(self.object_name) + 1
+
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('AccessDenied')
+
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
@@ -628,6 +636,10 @@ class MultiPartObjectController(object):
         """Initiate and complete multipart upload
         """
         if 'uploads' in req.GET:
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('AccessDenied')
+
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
@@ -697,6 +709,10 @@ class MultiPartObjectController(object):
                 int(upload_id, 16)
             except (TypeError, ValueError):
                 return get_err_response('InvalidURI')
+
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('AccessDenied')
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -788,6 +804,10 @@ class MultiPartObjectController(object):
         if not part_number.isdigit():
             return get_err_response('InvalidURI')
 
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('AccessDenied')
+
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
@@ -838,6 +858,10 @@ class MultiPartObjectController(object):
             int(upload_id, 16)
         except (TypeError, ValueError):
             return get_err_response('InvalidURI')
+
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('AccessDenied')
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
