@@ -487,10 +487,10 @@ class MultiPartObjectController(object):
         the parts that have been uploaded for a specific multipart upload
         """
         if 'uploads' in req.GET:
-            delimiter = req.GET.get('delimiter', '')
+#            delimiter = req.GET.get('delimiter', '')
             max_uploads = req.GET.get('max-uploads', '1000')
-            key-marker = req.GET.get('key-marker', '')
-            prefix = req.GET.get('prefix', '')
+#            key-marker = req.GET.get('key-marker', '')
+#            prefix = req.GET.get('prefix', '')
             upload_id_marker = req.GET.get('upload-id-marker', '')
 
             try:
