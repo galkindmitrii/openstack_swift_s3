@@ -483,125 +483,146 @@ class MultiPartObjectController(object):
 
     def GET(self, req):
         """
-        Lists the parts that have been uploaded for a specific multipart upload
+        Lists in-progress multipart uploads or lists
+        the parts that have been uploaded for a specific multipart upload
         """
-        upload_id = req.GET.get('uploadId')
-        max_parts = req.GET.get('max-parts', '1000')
-        part_number_marker = req.GET.get('part-number-marker', '')
+        if 'uploads' in req.GET:
+            delimiter = req.GET.get('delimiter', '')
+            max_uploads = req.GET.get('max-uploads', '1000')
+            key-marker = req.GET.get('key-marker', '')
+            prefix = req.GET.get('prefix', '')
+            upload_id_marker = req.GET.get('upload-id-marker', '')
 
-        try:
-            int(upload_id, 16)
-            max_parts = int(max_parts)
-            if part_number_marker:
-                part_number_marker = int(part_number_marker)
-        except (TypeError, ValueError):
-            return get_err_response('InvalidURI')
-
-        object_name_prefix_len = len(self.object_name) + 1
-        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
-        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
-
-        meta_path = "%s%s/%s/meta" % (cont_path, self.object_name, upload_id)
-
-        meta_req = req.copy()
-        meta_req.method = 'HEAD'
-        meta_req.body = ''
-        meta_req.upath_info = meta_path
-        meta_req.GET.clear()
-
-        meta_resp = meta_req.get_response(self.app)
-        status = meta_resp.status_int
-
-        if status != 200:
-            return get_err_response('NoSuchUpload')
-
-        list_req = req.copy()
-        list_req.upath_info = cont_path
-        list_req.GET.clear()
-        list_req.GET['format'] = 'json'
-        list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name,
-                                                     self.object_name,
-                                                     upload_id)
-        list_req.GET['limit'] = str(max_parts + 1)
-        if part_number_marker:
-            list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name,
-                                                        upload_id,
-                                                        part_number_marker)
-
-        resp = list_req.get_response(self.app)
-        status = resp.status_int
-
-        if status != 200:
-            if status == 401:
-                return get_err_response('AccessDenied')
-            elif status == 404:
-                return get_err_response('InvalidBucketName')
-            else:
+            try:
+                max_uploads = int(max_uploads)
+                if upload_id_marker:
+                    upload_id_marker = int(upload_id_marker)
+            except (TypeError, ValueError):
                 return get_err_response('InvalidURI')
 
-        objects = json.loads(resp.body)
 
-        if len(objects) > max_parts:
-            objects = objects.pop(-1)
-            next_marker = objects[-1]['name'][object_name_prefix_len:]
-            is_truncated = 'true'
-        else:
-            next_marker = ''
-            is_truncated = 'false'
+        elif 'uploadId' in req.GET:
+            upload_id = req.GET.get('uploadId')
+            max_parts = req.GET.get('max-parts', '1000')
+            part_number_marker = req.GET.get('part-number-marker', '')
 
-        if next_marker:
-            next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % \
-                                                                    next_marker
+            try:
+                int(upload_id, 16)
+                max_parts = int(max_parts)
+                if part_number_marker:
+                    part_number_marker = int(part_number_marker)
+            except (TypeError, ValueError):
+                return get_err_response('InvalidURI')
 
-        if part_number_marker:
-            part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % \
-                                                             part_number_marker
+            object_name_prefix_len = len(self.object_name) + 1
+            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
-        parts = ''.join(("<Part>"
-                         "<PartNumber>%s</PartNumber>"
-                         "<LastModified>%sZ</LastModified>"
-                         "<ETag>\"%s\"</ETag>"
-                         "<Size>%s</Size>"
-                         "</Part>" % (
-                         obj['name'][object_name_prefix_len:],
-                         obj['last_modified'][:-3],
-                         obj['hash'],
-                         obj['bytes']) for obj in objects))
+            meta_path = "%s%s/%s/meta" % (cont_path,
+                                          self.object_name,
+                                          upload_id)
 
-        body = (
-          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-          "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-          "<Bucket>%s</Bucket>"
-          "<Key>%s</Key>"
-          "<UploadId>%s</UploadId>"
-          "<Initiator>"
-          "<ID>%s</ID>"
-          "<DisplayName>%s</DisplayName>"
-          "</Initiator>"
-          "<Owner>"
-          "<ID>%s</ID>"
-          "<DisplayName>%s</DisplayName>"
-          "</Owner>"
-          "<StorageClass>STANDARD</StorageClass>"
-          "%s%s"
-          "<MaxParts>%s</MaxParts>"
-          "<IsTruncated>%s</IsTruncated>"
-          "%s"
-          "</ListPartsResult>" % (
-          self.container_name,
-          self.object_name,
-          upload_id,
-          self.account_name,
-          self.account_name,
-          self.account_name,
-          self.account_name,
-          part_number_marker,
-          next_marker,
-          max_parts,
-          is_truncated,
-          parts,
-          ))
-        return Response(status=200, body=body, content_type='application/xml')
+            meta_req = req.copy()
+            meta_req.method = 'HEAD'
+            meta_req.body = ''
+            meta_req.upath_info = meta_path
+            meta_req.GET.clear()
+
+            meta_resp = meta_req.get_response(self.app)
+            status = meta_resp.status_int
+
+            if status != 200:
+                return get_err_response('NoSuchUpload')
+
+            list_req = req.copy()
+            list_req.upath_info = cont_path
+            list_req.GET.clear()
+            list_req.GET['format'] = 'json'
+            list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name,
+                                                         self.object_name,
+                                                         upload_id)
+            list_req.GET['limit'] = str(max_parts + 1)
+            if part_number_marker:
+                list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name,
+                                                            upload_id,
+                                                            part_number_marker)
+
+            resp = list_req.get_response(self.app)
+            status = resp.status_int
+
+            if status != 200:
+                if status == 401:
+                    return get_err_response('AccessDenied')
+                elif status == 404:
+                    return get_err_response('InvalidBucketName')
+                else:
+                    return get_err_response('InvalidURI')
+
+            objects = json.loads(resp.body)
+
+            if len(objects) > max_parts:
+                objects = objects.pop(-1)
+                next_marker = objects[-1]['name'][object_name_prefix_len:]
+                is_truncated = 'true'
+            else:
+                next_marker = ''
+                is_truncated = 'false'
+
+            if next_marker:
+                next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % \
+                                                                        next_marker
+
+            if part_number_marker:
+                part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % \
+                                                                 part_number_marker
+
+            parts = ''.join(("<Part>"
+                             "<PartNumber>%s</PartNumber>"
+                             "<LastModified>%sZ</LastModified>"
+                             "<ETag>\"%s\"</ETag>"
+                             "<Size>%s</Size>"
+                             "</Part>" % (
+                             obj['name'][object_name_prefix_len:],
+                             obj['last_modified'][:-3],
+                             obj['hash'],
+                             obj['bytes']) for obj in objects))
+
+            body = (
+              "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+              "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+              "<Bucket>%s</Bucket>"
+              "<Key>%s</Key>"
+              "<UploadId>%s</UploadId>"
+              "<Initiator>"
+              "<ID>%s</ID>"
+              "<DisplayName>%s</DisplayName>"
+              "</Initiator>"
+              "<Owner>"
+              "<ID>%s</ID>"
+              "<DisplayName>%s</DisplayName>"
+              "</Owner>"
+              "<StorageClass>STANDARD</StorageClass>"
+              "%s%s"
+              "<MaxParts>%s</MaxParts>"
+              "<IsTruncated>%s</IsTruncated>"
+              "%s"
+              "</ListPartsResult>" % (
+              self.container_name,
+              self.object_name,
+              upload_id,
+              self.account_name,
+              self.account_name,
+              self.account_name,
+              self.account_name,
+              part_number_marker,
+              next_marker,
+              max_parts,
+              is_truncated,
+              parts,
+              ))
+            return Response(status=200,
+                            body=body,
+                            content_type='application/xml')
 
     def POST(self, req):
         """Initiate and complete multipart upload
@@ -857,7 +878,7 @@ class ObjectController(NormalObjectController, MultiPartObjectController):
         MultiPartObjectController.__init__(self, *args, **kwargs)
 
     def GET(self, req):
-        if 'uploadId' in req.GET:
+        if 'uploadId' in req.GET or 'uploads' in req.GET:
             return MultiPartObjectController.GET(self, req)
         return NormalObjectController.GET(self, req)
 
