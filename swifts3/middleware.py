@@ -38,6 +38,11 @@ secret access key is the account password.  The host should also point
 to the swift storage hostname.  It also will have to use the old style
 calling format, and not the hostname based container format.
 
+Note that all the operations with multipart upload buckets are denied
+to user, as well as multipart buckets are not listed in all buckets list.
+In case of GET/DELETE - NoSuchBucket error is returned;
+In case of PUT/POST - InvalidBucketName error is returned.
+
 An example client using the python boto library might look like the
 following for an SAIO setup::
 
@@ -336,6 +341,10 @@ class BucketController(object):
                                      obj['last_modified'][:-3]))
                 else:
                     objects.remove(obj)
+
+            #TODO: Currently there are less then max_uploads results
+            # in response; Amount of uploads == amount of meta files
+            # received in a request for a list of objects in bucket.
 
             if len(objects) == (max_uploads + 1):
                 is_truncated = 'true'
