@@ -20,7 +20,7 @@ The following opperations are currently supported:
 
     * GET Service
     * DELETE Bucket
-    * GET Bucket (List Objects)
+    * GET Bucket (List Objects, List multipart uploads in progress)
     * PUT Bucket
     * DELETE Object
     * GET Object
@@ -102,7 +102,8 @@ qsa_of_interest = ['acl', 'defaultObjectAcl', 'location', 'logging',
 
 def get_err_response(code):
     """
-    Given an HTTP response code, create a properly formatted xml error response
+    Creates a properly formatted xml error response by a
+    given an HTTP response code,
 
     :param code: error code
     :returns: webob.response object
@@ -249,7 +250,7 @@ class ServiceController(object):
 
 class BucketController(object):
     """
-    Handles bucket request.
+    Handles bucket requests.
     """
     def __init__(self, env, app, account_name, token, container_name,
                     **kwargs):
@@ -261,8 +262,8 @@ class BucketController(object):
 
     def GET(self, req):
         """
-        Handle listing of in-progress multipart uploads,
-        Handle list objects request
+        Handles listing of in-progress multipart uploads,
+        handles list objects request.
         """
         if 'uploads' in req.GET:
             acl = req.GET.get('acl')
@@ -433,7 +434,7 @@ class BucketController(object):
 
     def PUT(self, req):
         """
-        Handle PUT Bucket request
+        Handles PUT Bucket request.
         """
         resp = req.get_response(self.app)
         status = resp.status_int
@@ -453,7 +454,7 @@ class BucketController(object):
 
     def DELETE(self, req):
         """
-        Handle DELETE Bucket request
+        Handles DELETE Bucket request.
         """
         resp = req.get_response(self.app)
         status = resp.status_int
@@ -475,7 +476,7 @@ class BucketController(object):
 
 class NormalObjectController(object):
     """
-    Handles requests on objects
+    Handles requests on objects.
     """
 
     def __init__(self, env, app, account_name, token, container_name,
@@ -516,19 +517,19 @@ class NormalObjectController(object):
 
     def HEAD(self, req):
         """
-        Handle HEAD Object request
+        Handles HEAD Object request.
         """
         return self.GETorHEAD(req)
 
     def GET(self, req):
         """
-        Handle GET Object request
+        Handles GET Object request.
         """
         return self.GETorHEAD(req)
 
     def PUT(self, req):
         """
-        Handle PUT Object and PUT Object (Copy) request
+        Handles PUT Object and PUT Object (Copy) request.
         """
         environ = req.environ
         for key, value in environ.items():
@@ -561,7 +562,7 @@ class NormalObjectController(object):
 
     def DELETE(self, req):
         """
-        Handle DELETE Object request
+        Handles DELETE Object request.
         """
 
         resp = req.get_response(self.app)
@@ -591,7 +592,7 @@ class MultiPartObjectController(object):
 
     def GET(self, req):
         """
-        Lists multipart uploads by uploadId
+        Lists multipart uploads by uploadId.
         """
         upload_id = req.GET.get('uploadId')
         max_parts = req.GET.get('max-parts', '1000')
@@ -721,7 +722,8 @@ class MultiPartObjectController(object):
                         content_type='application/xml')
 
     def POST(self, req):
-        """Initiate and complete multipart upload
+        """
+        Initiate and complete multipart upload.
         """
         if 'uploads' in req.GET:
             # any operations with multipart buckets are not allowed to user
@@ -879,7 +881,8 @@ class MultiPartObjectController(object):
         return get_err_response('InvalidURI')
 
     def PUT(self, req):
-        """Upload part of multipart upload
+        """
+        Upload part of a multipart upload.
         """
         upload_id = req.GET.get('uploadId')
         part_number = req.GET.get('partNumber', '')
@@ -938,7 +941,8 @@ class MultiPartObjectController(object):
         return Response(status=200, etag=resp.headers['ETag'])
 
     def DELETE(self, req):
-        """Abort multipart upload by uploadId
+        """
+        Abort multipart upload by uploadId.
         """
         upload_id = req.GET.get('uploadId')
 
@@ -986,6 +990,7 @@ class MultiPartObjectController(object):
 
 
 class ObjectController(NormalObjectController, MultiPartObjectController):
+    """Manages requests on normal and multipart objects"""
     def __init__(self, *args, **kwargs):
         MultiPartObjectController.__init__(self, *args, **kwargs)
 
