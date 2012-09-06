@@ -65,7 +65,7 @@ from webob.multidict import MultiDict
 
 import simplejson as json
 
-from swift.common.utils import split_path
+from swift.common.utils import split_path, get_logger
 
 
 #XXX: In webob-1.9b copied environ contained link to original
@@ -87,6 +87,7 @@ class Request(WebObRequest):
         return req
 
 MAX_BUCKET_LISTING = 1000
+MAX_UPLOADS_LISTING = 1000
 MULTIPART_UPLOAD_PREFIX = 'mpu.'
 
 # List of Query String Arguments of Interest
@@ -260,68 +261,175 @@ class BucketController(object):
 
     def GET(self, req):
         """
-        Handle GET Bucket (List Objects) request
+        Handle listing of in-progress multipart uploads,
+        Handle list objects request
         """
-        acl = req.GET.get('acl')
-        params = MultiDict([('format', 'json')])
-        max_keys = req.GET.get('max-keys')
-        if (max_keys is not None and max_keys.isdigit()):
-            max_keys = min(int(max_keys), MAX_BUCKET_LISTING)
-        else:
-            max_keys = MAX_BUCKET_LISTING
-        params['limit'] = str(max_keys + 1)
-        for param_name in ('marker', 'prefix', 'delimiter'):
-            if param_name in req.GET:
-                params[param_name] = req.GET[param_name]
-
-        req.GET.clear()
-        req.GET.update(params)
-
-        resp = req.get_response(self.app)
-        status = resp.status_int
-        body = resp.body
-
-        if status != 200:
-            if status == 401:
-                return get_err_response('AccessDenied')
-            elif status == 404:
-                return get_err_response('InvalidBucketName')
+        if 'uploads' in req.GET:
+            acl = req.GET.get('acl')
+            params = MultiDict([('format', 'json')])
+            max_uploads = req.GET.get('max-uploads')
+            if (max_uploads is not None and max_uploads.isdigit()):
+                max_uploads = min(int(max_uploads), MAX_UPLOADS_LISTING)
             else:
-                return get_err_response('InvalidURI')
+                max_uploads = MAX_UPLOADS_LISTING
+            params['limit'] = str(max_uploads + 1)
+            for param_name in ('key-marker', 'prefix', 'delimiter',
+                                                           'upload-id-marker'):
+                if param_name in req.GET:
+                    params[param_name] = req.GET[param_name]
 
-        if acl is not None:
-            return get_acl(self.account_name)
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                cont_name = self.container_name
+            else:
+                cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
 
-        objects = json.loads(resp.body)
-        body = ('<?xml version="1.0" encoding="UTF-8"?>'
-            '<ListBucketResult '
-                'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-            '<Prefix>%s</Prefix>'
-            '<Marker>%s</Marker>'
-            '<Delimiter>%s</Delimiter>'
-            '<IsTruncated>%s</IsTruncated>'
-            '<MaxKeys>%s</MaxKeys>'
-            '<Name>%s</Name>'
-            '%s'
-            '%s'
-            '</ListBucketResult>' %
-            (
-                xml_escape(params.get('prefix', '')),
-                xml_escape(params.get('marker', '')),
-                xml_escape(params.get('delimiter', '')),
-                'true' if len(objects) == (max_keys + 1) else 'false',
-                max_keys,
-                xml_escape(self.container_name),
-                "".join(['<Contents><Key>%s</Key><LastModified>%sZ</LastModif'\
-                        'ied><ETag>%s</ETag><Size>%s</Size><StorageClass>STA'\
-                        'NDARD</StorageClass></Contents>' %
-                        (xml_escape(i['name']), i['last_modified'][:-3],
-                                                         i['hash'], i['bytes'])
-                           for i in objects[:max_keys] if 'subdir' not in i]),
-                "".join(['<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>'
-                         % xml_escape(i['subdir'])
-                         for i in objects[:max_keys] if 'subdir' in i])))
-        return Response(body=body, content_type='application/xml')
+            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
+
+            req.upath_info = cont_path
+            req.GET.clear()
+            req.GET.update(params)
+
+            resp = req.get_response(self.app)
+            status = resp.status_int
+            body = resp.body
+
+            if status != 200:
+                if status == 401:
+                    return get_err_response('AccessDenied')
+                elif status == 404:
+                    return get_err_response('InvalidBucketName')
+                else:
+                    return get_err_response('InvalidURI')
+
+            if acl is not None:
+                return get_acl(self.account_name)
+
+            objects = json.loads(resp.body)
+            uploads = ''
+            splited_name = ''
+
+            for obj in objects:
+                if obj['name'].endswith('/meta'):
+                    splited_name = obj['name'].split('/')
+                    uploads = uploads.join(
+                                     "<Upload>"
+                                     "<Key>%s</Key>"
+                                     "<UploadId>%s</UploadId>"
+                                     "<Initiator>"
+                                     "<ID>%s</ID>"
+                                     "<DisplayName>%s</DisplayName>"
+                                     "</Initiator>"
+                                     "<Owner>"
+                                     "<ID>%s</ID>"
+                                     "<DisplayName>%s</DisplayName>"
+                                     "</Owner>"
+                                     "<StorageClass>STANDARD</StorageClass>"
+                                     "<Initiated>%sZ</Initiated>"
+                                     "</Upload>" % (
+                                     splited_name[0],
+                                     splited_name[1],
+                                     self.account_name,
+                                     self.account_name,
+                                     self.account_name,
+                                     self.account_name,
+                                     obj['last_modified'][:-3]))
+                else:
+                    objects.remove(obj)
+
+            if len(objects) == (max_uploads + 1):
+                is_truncated = 'true'
+                next_key_marker = splited_name[0]
+                next_uploadId_marker = splited_name[1]
+            else:
+                is_truncated = 'false'
+                next_key_marker = next_uploadId_marker = ''
+
+            body = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<ListMultipartUploadsResult '
+                    'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<Bucket>%s</Bucket>'
+                '<KeyMarker>%s</KeyMarker>'
+                '<UploadIdMarker>%s</UploadIdMarker>'
+                '<NextKeyMarker>%s</NextKeyMarker>'
+                '<NextUploadIdMarker>%s</NextUploadIdMarker>'
+                '<MaxUploads>%s</MaxUploads>'
+                '<IsTruncated>%s</IsTruncated>'
+                '%s'
+                '</ListMultipartUploadsResult>' %
+                    (
+                        xml_escape(self.container_name),
+                        xml_escape(params.get('key-marker', '')),
+                        xml_escape(params.get('upload-id-marker', '')),
+                        next_key_marker,
+                        next_uploadId_marker,
+                        max_uploads,
+                        is_truncated,
+                        uploads
+                    )
+                )
+            return Response(body=body, content_type='application/xml')
+
+        else:
+            acl = req.GET.get('acl')
+            params = MultiDict([('format', 'json')])
+            max_keys = req.GET.get('max-keys')
+            if (max_keys is not None and max_keys.isdigit()):
+                max_keys = min(int(max_keys), MAX_BUCKET_LISTING)
+            else:
+                max_keys = MAX_BUCKET_LISTING
+            params['limit'] = str(max_keys + 1)
+            for param_name in ('marker', 'prefix', 'delimiter'):
+                if param_name in req.GET:
+                    params[param_name] = req.GET[param_name]
+
+            req.GET.clear()
+            req.GET.update(params)
+
+            resp = req.get_response(self.app)
+            status = resp.status_int
+            body = resp.body
+
+            if status != 200:
+                if status == 401:
+                    return get_err_response('AccessDenied')
+                elif status == 404:
+                    return get_err_response('InvalidBucketName')
+                else:
+                    return get_err_response('InvalidURI')
+
+            if acl is not None:
+                return get_acl(self.account_name)
+
+            objects = json.loads(resp.body)
+            body = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<ListBucketResult '
+                    'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<Prefix>%s</Prefix>'
+                '<Marker>%s</Marker>'
+                '<Delimiter>%s</Delimiter>'
+                '<IsTruncated>%s</IsTruncated>'
+                '<MaxKeys>%s</MaxKeys>'
+                '<Name>%s</Name>'
+                '%s'
+                '%s'
+                '</ListBucketResult>' %
+                (
+                    xml_escape(params.get('prefix', '')),
+                    xml_escape(params.get('marker', '')),
+                    xml_escape(params.get('delimiter', '')),
+                    'true' if len(objects) == (max_keys + 1) else 'false',
+                    max_keys,
+                    xml_escape(self.container_name),
+                    "".join(['<Contents><Key>%s</Key><LastModified>%sZ</LastModif'\
+                            'ied><ETag>%s</ETag><Size>%s</Size><StorageClass>STA'\
+                            'NDARD</StorageClass></Contents>' %
+                            (xml_escape(i['name']), i['last_modified'][:-3],
+                                                             i['hash'], i['bytes'])
+                               for i in objects[:max_keys] if 'subdir' not in i]),
+                    "".join(['<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>'
+                             % xml_escape(i['subdir'])
+                             for i in objects[:max_keys] if 'subdir' in i])))
+            return Response(body=body, content_type='application/xml')
 
     def PUT(self, req):
         """
@@ -483,154 +591,134 @@ class MultiPartObjectController(object):
 
     def GET(self, req):
         """
-        Lists in-progress multipart uploads or lists
-        the parts that have been uploaded for a specific multipart upload
+        Lists multipart uploads by uploadId
         """
-        if 'uploads' in req.GET:
-#            delimiter = req.GET.get('delimiter', '')
-            max_uploads = req.GET.get('max-uploads', '1000')
-#            key-marker = req.GET.get('key-marker', '')
-#            prefix = req.GET.get('prefix', '')
-            upload_id_marker = req.GET.get('upload-id-marker', '')
+        upload_id = req.GET.get('uploadId')
+        max_parts = req.GET.get('max-parts', '1000')
+        part_number_marker = req.GET.get('part-number-marker', '')
 
-            try:
-                max_uploads = int(max_uploads)
-                if upload_id_marker:
-                    upload_id_marker = int(upload_id_marker)
-            except (TypeError, ValueError):
-                return get_err_response('InvalidURI')
-
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('AccessDenied')
-
-        elif 'uploadId' in req.GET:
-            upload_id = req.GET.get('uploadId')
-            max_parts = req.GET.get('max-parts', '1000')
-            part_number_marker = req.GET.get('part-number-marker', '')
-
-            try:
-                int(upload_id, 16)
-                max_parts = int(max_parts)
-                if part_number_marker:
-                    part_number_marker = int(part_number_marker)
-            except (TypeError, ValueError):
-                return get_err_response('InvalidURI')
-
-            object_name_prefix_len = len(self.object_name) + 1
-
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('AccessDenied')
-
-            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
-            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
-
-            meta_path = "%s%s/%s/meta" % (cont_path,
-                                          self.object_name,
-                                          upload_id)
-
-            meta_req = req.copy()
-            meta_req.method = 'HEAD'
-            meta_req.body = ''
-            meta_req.upath_info = meta_path
-            meta_req.GET.clear()
-
-            meta_resp = meta_req.get_response(self.app)
-            status = meta_resp.status_int
-
-            if status != 200:
-                return get_err_response('NoSuchUpload')
-
-            list_req = req.copy()
-            list_req.upath_info = cont_path
-            list_req.GET.clear()
-            list_req.GET['format'] = 'json'
-            list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name,
-                                                         self.object_name,
-                                                         upload_id)
-            list_req.GET['limit'] = str(max_parts + 1)
+        try:
+            int(upload_id, 16)
+            max_parts = int(max_parts)
             if part_number_marker:
-                list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name,
-                                                            upload_id,
-                                                            part_number_marker)
+                part_number_marker = int(part_number_marker)
+        except (TypeError, ValueError):
+            return get_err_response('InvalidURI')
 
-            resp = list_req.get_response(self.app)
-            status = resp.status_int
+        object_name_prefix_len = len(self.object_name) + 1
 
-            if status != 200:
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('InvalidBucketName')
-                else:
-                    return get_err_response('InvalidURI')
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('AccessDenied')
 
-            objects = json.loads(resp.body)
+        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
-            if len(objects) > max_parts:
-                objects = objects.pop(-1)
-                next_marker = objects[-1]['name'][object_name_prefix_len:]
-                is_truncated = 'true'
+        meta_path = "%s%s/%s/meta" % (cont_path,
+                                      self.object_name,
+                                      upload_id)
+
+        meta_req = req.copy()
+        meta_req.method = 'HEAD'
+        meta_req.body = ''
+        meta_req.upath_info = meta_path
+        meta_req.GET.clear()
+
+        meta_resp = meta_req.get_response(self.app)
+        status = meta_resp.status_int
+
+        if status != 200:
+            return get_err_response('NoSuchUpload')
+
+        list_req = req.copy()
+        list_req.upath_info = cont_path
+        list_req.GET.clear()
+        list_req.GET['format'] = 'json'
+        list_req.GET['prefix'] = "%s/%s/%s/part/" % (cont_name,
+                                                     self.object_name,
+                                                     upload_id)
+        list_req.GET['limit'] = str(max_parts + 1)
+        if part_number_marker:
+            list_req.GET['marker'] = "%s/%s/part/%s" % (self.object_name,
+                                                        upload_id,
+                                                        part_number_marker)
+
+        resp = list_req.get_response(self.app)
+        status = resp.status_int
+
+        if status != 200:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
             else:
-                next_marker = ''
-                is_truncated = 'false'
+                return get_err_response('InvalidURI')
 
-            if next_marker:
-                next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % \
-                                                                        next_marker
+        objects = json.loads(resp.body)
 
-            if part_number_marker:
-                part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % \
-                                                                 part_number_marker
+        if len(objects) > max_parts:
+            objects = objects.pop(-1)
+            next_marker = objects[-1]['name'][object_name_prefix_len:]
+            is_truncated = 'true'
+        else:
+            next_marker = ''
+            is_truncated = 'false'
 
-            parts = ''.join(("<Part>"
-                             "<PartNumber>%s</PartNumber>"
-                             "<LastModified>%sZ</LastModified>"
-                             "<ETag>\"%s\"</ETag>"
-                             "<Size>%s</Size>"
-                             "</Part>" % (
-                             obj['name'][object_name_prefix_len:],
-                             obj['last_modified'][:-3],
-                             obj['hash'],
-                             obj['bytes']) for obj in objects))
+        if next_marker:
+            next_marker = "<NextPartNumberMarker>%</NextPartNumberMarker>" % \
+                                                                    next_marker
 
-            body = (
-              "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-              "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-              "<Bucket>%s</Bucket>"
-              "<Key>%s</Key>"
-              "<UploadId>%s</UploadId>"
-              "<Initiator>"
-              "<ID>%s</ID>"
-              "<DisplayName>%s</DisplayName>"
-              "</Initiator>"
-              "<Owner>"
-              "<ID>%s</ID>"
-              "<DisplayName>%s</DisplayName>"
-              "</Owner>"
-              "<StorageClass>STANDARD</StorageClass>"
-              "%s%s"
-              "<MaxParts>%s</MaxParts>"
-              "<IsTruncated>%s</IsTruncated>"
-              "%s"
-              "</ListPartsResult>" % (
-              self.container_name,
-              self.object_name,
-              upload_id,
-              self.account_name,
-              self.account_name,
-              self.account_name,
-              self.account_name,
-              part_number_marker,
-              next_marker,
-              max_parts,
-              is_truncated,
-              parts,
-              ))
-            return Response(status=200,
-                            body=body,
-                            content_type='application/xml')
+        if part_number_marker:
+            part_number_marker = "<PartNumberMarker>%</PartNumberMarker>" % \
+                                                             part_number_marker
+
+        parts = ''.join(("<Part>"
+                         "<PartNumber>%s</PartNumber>"
+                         "<LastModified>%sZ</LastModified>"
+                         "<ETag>\"%s\"</ETag>"
+                         "<Size>%s</Size>"
+                         "</Part>" % (
+                         obj['name'][object_name_prefix_len:],
+                         obj['last_modified'][:-3],
+                         obj['hash'],
+                         obj['bytes']) for obj in objects))
+
+        body = (
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<ListPartsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+          "<Bucket>%s</Bucket>"
+          "<Key>%s</Key>"
+          "<UploadId>%s</UploadId>"
+          "<Initiator>"
+          "<ID>%s</ID>"
+          "<DisplayName>%s</DisplayName>"
+          "</Initiator>"
+          "<Owner>"
+          "<ID>%s</ID>"
+          "<DisplayName>%s</DisplayName>"
+          "</Owner>"
+          "<StorageClass>STANDARD</StorageClass>"
+          "%s%s"
+          "<MaxParts>%s</MaxParts>"
+          "<IsTruncated>%s</IsTruncated>"
+          "%s"
+          "</ListPartsResult>" % (
+          self.container_name,
+          self.object_name,
+          upload_id,
+          self.account_name,
+          self.account_name,
+          self.account_name,
+          self.account_name,
+          part_number_marker,
+          next_marker,
+          max_parts,
+          is_truncated,
+          parts,
+          ))
+        return Response(status=200,
+                        body=body,
+                        content_type='application/xml')
 
     def POST(self, req):
         """Initiate and complete multipart upload
@@ -902,7 +990,7 @@ class ObjectController(NormalObjectController, MultiPartObjectController):
         MultiPartObjectController.__init__(self, *args, **kwargs)
 
     def GET(self, req):
-        if 'uploadId' in req.GET or 'uploads' in req.GET:
+        if 'uploadId' in req.GET:
             return MultiPartObjectController.GET(self, req)
         return NormalObjectController.GET(self, req)
 
