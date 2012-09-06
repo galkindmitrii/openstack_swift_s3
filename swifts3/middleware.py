@@ -88,7 +88,7 @@ class Request(WebObRequest):
 
 MAX_BUCKET_LISTING = 1000
 MAX_UPLOADS_LISTING = 1000
-MULTIPART_UPLOAD_PREFIX = 'mpu.'
+MULTIPART_UPLOAD_PREFIX = 'MPU.'
 
 # List of Query String Arguments of Interest
 qsa_of_interest = ['acl', 'defaultObjectAcl', 'location', 'logging',
