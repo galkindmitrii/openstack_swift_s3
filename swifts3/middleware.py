@@ -279,11 +279,11 @@ class BucketController(object):
                 if param_name in req.GET:
                     params[param_name] = req.GET[param_name]
 
+            # any operations with multipart buckets are not allowed to user
             if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                cont_name = self.container_name
-            else:
-                cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+                return get_err_response('NoSuchBucket')
 
+            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
             req.upath_info = cont_path
@@ -382,6 +382,10 @@ class BucketController(object):
             for param_name in ('marker', 'prefix', 'delimiter'):
                 if param_name in req.GET:
                     params[param_name] = req.GET[param_name]
+
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('NoSuchBucket')
 
             req.GET.clear()
             req.GET.update(params)
@@ -610,7 +614,7 @@ class MultiPartObjectController(object):
 
         # any operations with multipart buckets are not allowed to user
         if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('AccessDenied')
+            return get_err_response('NoSuchBucket')
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -728,7 +732,7 @@ class MultiPartObjectController(object):
         if 'uploads' in req.GET:
             # any operations with multipart buckets are not allowed to user
             if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('AccessDenied')
+                return get_err_response('InvalidBucketName')
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -802,7 +806,7 @@ class MultiPartObjectController(object):
 
             # any operations with multipart buckets are not allowed to user
             if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('AccessDenied')
+                return get_err_response('InvalidBucketName')
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -897,7 +901,7 @@ class MultiPartObjectController(object):
 
         # any operations with multipart buckets are not allowed to user
         if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('AccessDenied')
+            return get_err_response('InvalidBucketName')
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -953,7 +957,7 @@ class MultiPartObjectController(object):
 
         # any operations with multipart buckets are not allowed to user
         if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('AccessDenied')
+            return get_err_response('NoSuchBucket')
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
