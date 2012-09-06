@@ -7,7 +7,7 @@ The following opperations are currently supported:
 
     * GET Service
     * DELETE Bucket
-    * GET Bucket (List Objects)
+    * GET Bucket (List Objects; List in-progress multipart uploads)
     * PUT Bucket
     * DELETE Object
     * GET Object
