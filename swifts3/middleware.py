@@ -271,6 +271,10 @@ class BucketController(object):
         handles list objects request.
         """
         if 'uploads' in req.GET:
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('NoSuchBucket')
+
             acl = req.GET.get('acl')
             params = MultiDict([('format', 'json')])
             max_uploads = req.GET.get('max-uploads')
@@ -283,10 +287,6 @@ class BucketController(object):
                                                            'upload-id-marker'):
                 if param_name in req.GET:
                     params[param_name] = req.GET[param_name]
-
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('NoSuchBucket')
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -380,6 +380,10 @@ class BucketController(object):
             return Response(body=body, content_type='application/xml')
 
         else:
+            # any operations with multipart buckets are not allowed to user
+            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+                return get_err_response('NoSuchBucket')
+
             acl = req.GET.get('acl')
             params = MultiDict([('format', 'json')])
             max_keys = req.GET.get('max-keys')
@@ -391,10 +395,6 @@ class BucketController(object):
             for param_name in ('marker', 'prefix', 'delimiter'):
                 if param_name in req.GET:
                     params[param_name] = req.GET[param_name]
-
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('NoSuchBucket')
 
             req.GET.clear()
             req.GET.update(params)
@@ -449,6 +449,10 @@ class BucketController(object):
         """
         Handles PUT Bucket request.
         """
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('InvalidBucketName')
+
         resp = req.get_response(self.app)
         status = resp.status_int
 
@@ -469,6 +473,10 @@ class BucketController(object):
         """
         Handles DELETE Bucket request.
         """
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('NoSuchBucket')
+
         resp = req.get_response(self.app)
         status = resp.status_int
 
