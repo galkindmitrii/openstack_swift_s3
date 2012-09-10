@@ -524,18 +524,37 @@ class BucketController(object):
                     for mpu_obj in objects:
                         if mpu_obj['name'].startswith(obj['name'][:-5]):
                             obj_req = req.copy()
-                            obj_req.upath_info = "%s%s" % (cont_path, mpu_obj['name'])
+                            obj_req.upath_info = "%s%s" % (cont_path,
+                                                           mpu_obj['name'])
                             obj_req.GET.clear()
 
                             obj_resp = obj_req.get_response(self.app)
-                            #TODO: check for status
+                            status = obj_resp.status_int
+
+                            if status not in (200, 204):
+                                if status == 401:
+                                    return get_err_response('AccessDenied')
+                                elif status == 404:
+                                    return get_err_response('NoSuchKey')
+                                else:
+                                    return get_err_response('InvalidURI')
 
             # deleting multipart bucket
             del_mpu_req = req.copy()
             del_mpu_req.upath_info = cont_path
             del_mpu_req.GET.clear()
             del_mpu_resp = del_mpu_req.get_response(self.app)
-            #TODO: check for status
+            status = del_mpu_resp.status_int
+
+            if status != 204:
+                if status == 401:
+                    return get_err_response('AccessDenied')
+                elif status == 404:
+                    return get_err_response('InvalidBucketName')
+                elif status == 409:
+                    return get_err_response('BucketNotEmpty')
+                else:
+                    return get_err_response('InvalidURI')
 
         return resp
 
