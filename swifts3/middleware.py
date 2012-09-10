@@ -297,7 +297,6 @@ class BucketController(object):
 
             resp = req.get_response(self.app)
             status = resp.status_int
-            body = resp.body
 
             if status != 200:
                 if status == 401:
@@ -472,12 +471,17 @@ class BucketController(object):
     def DELETE(self, req):
         """
         Handles DELETE Bucket request.
+        Also deletes multipart bucket if it exists.
+        Aborts all multipart uploads initiated for this bucket.
         """
         # any operations with multipart buckets are not allowed to user
         if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
             return get_err_response('NoSuchBucket')
 
-        resp = req.get_response(self.app)
+        # deleting regular bucket,
+        # request is copied to save valid authorization
+        del_req = req.copy()
+        resp = del_req.get_response(self.app)
         status = resp.status_int
 
         if status != 204:
@@ -490,8 +494,49 @@ class BucketController(object):
             else:
                 return get_err_response('InvalidURI')
 
-        resp = Response()
-        resp.status = 204
+        # check if there is a multipart bucket
+        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
+
+        list_req = req.copy()
+        list_req.method = 'GET'
+        list_req.upath_info = cont_path
+        list_req.GET.clear()
+        list_req.GET['format'] = 'json'
+
+        list_resp = list_req.get_response(self.app)
+        status = list_resp.status_int
+
+        if status != 200:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                # there is no MPU bucket, it's OK, there is only regular bucket
+                pass
+            else:
+                return get_err_response('InvalidURI')
+
+        elif status == 200:
+            # aborting multipart uploads by deleting meta and other files
+            objects = json.loads(list_resp.body)
+            for obj in objects:
+                if obj['name'].endswith('/meta'):
+                    for mpu_obj in objects:
+                        if mpu_obj['name'].startswith(obj['name'][:-5]):
+                            obj_req = req.copy()
+                            obj_req.upath_info = "%s%s" % (cont_path, mpu_obj['name'])
+                            obj_req.GET.clear()
+
+                            obj_resp = obj_req.get_response(self.app)
+                            #TODO: check for status
+
+            # deleting multipart bucket
+            del_mpu_req = req.copy()
+            del_mpu_req.upath_info = cont_path
+            del_mpu_req.GET.clear()
+            del_mpu_resp = del_mpu_req.get_response(self.app)
+            #TODO: check for status
+
         return resp
 
 
