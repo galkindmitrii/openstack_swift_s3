@@ -719,21 +719,6 @@ class TestSwift3(unittest.TestCase):
                    )
         self.assertEquals(code, 'InvalidURI')
 
-        class FakeResponse200Headers(object):
-            status_int = 200
-            headers = {'X-Object-Meta-Finished': 'test'}
-
-        with mock.patch('webob.Request.get_response') as mocked:
-            mocked.return_value = FakeResponse200Headers()
-            code = self._test_method_error(
-                       FakeAppObject,
-                       'POST',
-                       '/' + self.MULTIPART_UPLOAD_PREFIX + \
-                       'bucket/object?uploadId=deadbeef',
-                       0
-                       )
-            self.assertEquals(code, 'NoSuchUpload')
-
         class FakeResponse200(object):
             status_int = 200
             headers = {"test": "test"}
