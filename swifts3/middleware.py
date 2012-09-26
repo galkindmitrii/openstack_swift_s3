@@ -468,33 +468,12 @@ class BucketController(object):
         resp.status = 200
         return resp
 
-    def DELETE(self, req):
+    def mpu_bucket_deletion(self, req):
         """
-        Handles DELETE Bucket request.
-        Also deletes multipart bucket if it exists.
-        Aborts all multipart uploads initiated for this bucket.
+        This method checks if MPU bucket exists and
+        if there are any active MPUs are in it.
+        MPUs are aborted, parts are deleted.
         """
-        # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('NoSuchBucket')
-
-        # deleting regular bucket,
-        # request is copied to save valid authorization
-        del_req = req.copy()
-        resp = del_req.get_response(self.app)
-        status = resp.status_int
-
-        if status != 204:
-            if status == 401:
-                return get_err_response('AccessDenied')
-            elif status == 404:
-                return get_err_response('InvalidBucketName')
-            elif status == 409:
-                return get_err_response('BucketNotEmpty')
-            else:
-                return get_err_response('InvalidURI')
-
-        # check if there is a multipart bucket
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
@@ -531,6 +510,8 @@ class BucketController(object):
                             obj_resp = obj_req.get_response(self.app)
                             status = obj_resp.status_int
 
+                            #TODO: Add some logs here
+
                             if status not in (200, 204):
                                 if status == 401:
                                     return get_err_response('AccessDenied')
@@ -556,7 +537,37 @@ class BucketController(object):
                 else:
                     return get_err_response('InvalidURI')
 
-        return resp
+        return Response(status=204)
+
+    def DELETE(self, req):
+        """
+        Handles DELETE Bucket request.
+        Also deletes multipart bucket if it exists.
+        Aborts all multipart uploads initiated for this bucket.
+        """
+        # any operations with multipart buckets are not allowed to user
+        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+            return get_err_response('NoSuchBucket')
+
+        # deleting regular bucket,
+        # request is copied to save valid authorization
+        del_req = req.copy()
+        resp = del_req.get_response(self.app)
+        status = resp.status_int
+
+        if status != 204:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
+            elif status == 409:
+                return get_err_response('BucketNotEmpty')
+            else:
+                return get_err_response('InvalidURI')
+
+        # check if there is a multipart bucket and
+        # return 204 when everything is deleted
+        return self.mpu_bucket_deletion(req)
 
 
 class NormalObjectController(object):
@@ -649,7 +660,6 @@ class NormalObjectController(object):
         """
         Handles DELETE Object request.
         """
-
         resp = req.get_response(self.app)
         status = resp.status_int
 
