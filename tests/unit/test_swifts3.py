@@ -388,8 +388,11 @@ class TestSwift3(unittest.TestCase):
         req = Request.blank('/bucket',
                             environ={'REQUEST_METHOD': 'DELETE'},
                             headers={'Authorization': 'AWS test:tester:hmac'})
-        resp = local_app(req.environ, local_app.app.do_start_response)
-        self.assertEquals(local_app.app.response_args[0].split()[0], '204')
+        with mock.patch('swifts3.middleware.BucketController'
+                                             '.mpu_bucket_deletion') as mocked:
+            mocked.return_value = Response(status=204)
+            resp = local_app(req.environ, local_app.app.do_start_response)
+            self.assertEquals(local_app.app.response_args[0].split()[0], '204')
 
     def _check_acl(self, owner, resp):
         dom = xml.dom.minidom.parseString("".join(resp))
