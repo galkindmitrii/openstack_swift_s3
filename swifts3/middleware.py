@@ -822,161 +822,166 @@ class MultiPartObjectController(object):
                         body=body,
                         content_type='application/xml')
 
-    def POST(self, req):
-        """
-        Initiate and complete multipart upload.
-        """
-        if 'uploads' in req.GET:
-            # any operations with multipart buckets are not allowed to user
-            check_container_name_invalid_bucket_name_error(self.container_name)
+    def post_uploads(self, req):
+        """WRITE SMTH HERE """
+        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
-            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
-            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
+        cont_req = req.copy()
+        cont_req.method = 'HEAD'
+        cont_req.upath_info = cont_path
+        cont_req.GET.clear()
 
+        cont_resp = cont_req.get_response(self.app)
+        status = cont_resp.status_int
+
+        if status == 404:
             cont_req = req.copy()
-            cont_req.method = 'HEAD'
+            cont_req.method = 'PUT'
             cont_req.upath_info = cont_path
             cont_req.GET.clear()
 
             cont_resp = cont_req.get_response(self.app)
             status = cont_resp.status_int
 
-            if status == 404:
-                cont_req = req.copy()
-                cont_req.method = 'PUT'
-                cont_req.upath_info = cont_path
-                cont_req.GET.clear()
-
-                cont_resp = cont_req.get_response(self.app)
-                status = cont_resp.status_int
-
-            if status not in (201, 204):
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('InvalidBucketName')
-                else:
-                    return get_err_response('InvalidURI')
-
-            upload_id = uuid.uuid4().hex
-
-            meta_req = req.copy()
-            meta_req.method = 'PUT'
-            meta_req.upath_info = "%s%s/%s/meta" % (cont_path,
-                                                    self.object_name,
-                                                    upload_id)
-            for header, value in meta_req.headers.items():
-                if header.lower().startswith('x-amz-meta-'):
-                    meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = \
-                                                                          value
-
-            meta_resp = meta_req.get_response(self.app)
-            status = meta_resp.status_int
-
-            if status != 201:
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('InvalidBucketName')
-                else:
-                    return get_err_response('InvalidURI')
-
-            body = ('<?xml version="1.0" encoding="UTF-8"?>'
-                    '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-                    '<Bucket>%s</Bucket>'
-                    '<Key>%s</Key>'
-                    '<UploadId>%s</UploadId>'
-                    '</InitiateMultipartUploadResult>' %
-                    (self.container_name, self.object_name, upload_id))
-            return Response(status=200,
-                            body=body,
-                            content_type='application/xml')
-
-        elif 'uploadId' in req.GET:
-            upload_id = req.GET.get('uploadId')
-
-            try:
-                int(upload_id, 16)
-            except (TypeError, ValueError):
+        if status not in (201, 204):
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
+            else:
                 return get_err_response('InvalidURI')
 
-            # any operations with multipart buckets are not allowed to user
-            check_container_name_invalid_bucket_name_error(self.container_name)
+        upload_id = uuid.uuid4().hex
 
-            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
-            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
-            meta_path = "%s%s/%s/meta" % (cont_path,
-                                          self.object_name,
-                                          upload_id)
+        meta_req = req.copy()
+        meta_req.method = 'PUT'
+        meta_req.upath_info = "%s%s/%s/meta" % (cont_path,
+                                                self.object_name,
+                                                upload_id)
+        for header, value in meta_req.headers.items():
+            if header.lower().startswith('x-amz-meta-'):
+                meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = \
+                                                                      value
 
-            meta_req = req.copy()
-            meta_req.method = 'HEAD'
-            meta_req.body = ''
-            meta_req.upath_info = meta_path
-            meta_req.GET.clear()
+        meta_resp = meta_req.get_response(self.app)
+        status = meta_resp.status_int
 
-            meta_resp = meta_req.get_response(self.app)
-            status = meta_resp.status_int
+        if status != 201:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
+            else:
+                return get_err_response('InvalidURI')
 
-            if status != 200:
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('NoSuchUpload')
-                else:
-                    return get_err_response('InvalidURI')
+        body = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<Bucket>%s</Bucket>'
+                '<Key>%s</Key>'
+                '<UploadId>%s</UploadId>'
+                '</InitiateMultipartUploadResult>' %
+                (self.container_name, self.object_name, upload_id))
+        return Response(status=200,
+                        body=body,
+                        content_type='application/xml')
 
-            # TODO: Validate uploaded parts.
+    def post_uploadId(self, req):
+        """WRITE SMTH HERE """
+        upload_id = req.GET.get('uploadId')
 
-            manifest_path = MULTIPART_UPLOAD_PREFIX + \
-                                       "%s/%s/%s/part/" % (self.container_name,
-                                                           self.object_name,
-                                                           upload_id)
+        try:
+            int(upload_id, 16)
+        except (TypeError, ValueError):
+            return get_err_response('InvalidURI')
 
-            manifest_req = req.copy()
-            manifest_req.method = 'PUT'
-            manifest_req.GET.clear()
-            manifest_req.headers['X-Object-Manifest'] = manifest_path
-            for header, value in meta_resp.headers.iteritems():
-                if header.lower().startswith('x-object-meta-amz-'):
-                    manifest_req.headers['x-amz-meta-' + header[18:]] = value
+        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
+        meta_path = "%s%s/%s/meta" % (cont_path,
+                                      self.object_name,
+                                      upload_id)
 
-            manifest_resp = manifest_req.get_response(self.app)
-            status = manifest_resp.status_int
+        meta_req = req.copy()
+        meta_req.method = 'HEAD'
+        meta_req.body = ''
+        meta_req.upath_info = meta_path
+        meta_req.GET.clear()
 
-            if status == 201:
-                finish_req = req.copy()
-                finish_req.method = 'DELETE'
-                finish_req.upath_info = meta_path
-                finish_req.body = ''
-                finish_req.GET.clear()
+        meta_resp = meta_req.get_response(self.app)
+        status = meta_resp.status_int
 
-                finish_resp = finish_req.get_response(self.app)
-                status = finish_resp.status_int
+        if status != 200:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('NoSuchUpload')
+            else:
+                return get_err_response('InvalidURI')
 
-            if status not in (201, 204):
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('InvalidBucketName')
-                else:
-                    return get_err_response('InvalidURI')
+        # TODO: Validate uploaded parts.
 
-            body = ('<?xml version="1.0" encoding="UTF-8"?>'
-                    '<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-                    '<Location>%s</Location>'
-                    '<Bucket>%s</Bucket>'
-                    '<Key>%s</Key>'
-                    '<ETag>%s</ETag>'
-                    '</CompleteMultipartUploadResult>' %
-                    (self.orig_path_info,
-                     self.container_name,
-                     self.object_name,
-                     manifest_resp.headers['ETag']))
+        manifest_path = MULTIPART_UPLOAD_PREFIX + \
+                                   "%s/%s/%s/part/" % (self.container_name,
+                                                       self.object_name,
+                                                       upload_id)
 
-            return Response(status=200,
-                            body=body,
-                            content_type='application/xml')
+        manifest_req = req.copy()
+        manifest_req.method = 'PUT'
+        manifest_req.GET.clear()
+        manifest_req.headers['X-Object-Manifest'] = manifest_path
+        for header, value in meta_resp.headers.iteritems():
+            if header.lower().startswith('x-object-meta-amz-'):
+                manifest_req.headers['x-amz-meta-' + header[18:]] = value
+
+        manifest_resp = manifest_req.get_response(self.app)
+        status = manifest_resp.status_int
+
+        if status == 201:
+            finish_req = req.copy()
+            finish_req.method = 'DELETE'
+            finish_req.upath_info = meta_path
+            finish_req.body = ''
+            finish_req.GET.clear()
+
+            finish_resp = finish_req.get_response(self.app)
+            status = finish_resp.status_int
+
+        if status not in (201, 204):
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
+            else:
+                return get_err_response('InvalidURI')
+
+        body = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<Location>%s</Location>'
+                '<Bucket>%s</Bucket>'
+                '<Key>%s</Key>'
+                '<ETag>%s</ETag>'
+                '</CompleteMultipartUploadResult>' %
+                (self.orig_path_info,
+                 self.container_name,
+                 self.object_name,
+                 manifest_resp.headers['ETag']))
+
+        return Response(status=200,
+                        body=body,
+                        content_type='application/xml')
+
+    def POST(self, req):
+        """
+        Initiate and complete multipart upload.
+        """
+        # any operations with multipart buckets are not allowed to user
+        check_container_name_invalid_bucket_name_error(self.container_name)
+
+        if 'uploads' in req.GET:
+            return self.post_uploads(req)
+        elif 'uploadId' in req.GET:
+            return self.post_uploadId(req)
+
         return get_err_response('InvalidURI')
 
     def PUT(self, req):
