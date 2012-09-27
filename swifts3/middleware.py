@@ -823,7 +823,10 @@ class MultiPartObjectController(object):
                         content_type='application/xml')
 
     def post_uploads(self, req):
-        """WRITE SMTH HERE """
+        """
+        Called if POST with 'uploads' query string was received.
+        Creates metafile which is used as a flag on uncompleted MPU.
+        """
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
@@ -882,12 +885,16 @@ class MultiPartObjectController(object):
                 '<UploadId>%s</UploadId>'
                 '</InitiateMultipartUploadResult>' %
                 (self.container_name, self.object_name, upload_id))
+
         return Response(status=200,
                         body=body,
                         content_type='application/xml')
 
     def post_uploadId(self, req):
-        """WRITE SMTH HERE """
+        """
+        Called if POST with 'uploadId' query string was received.
+        Deletes metafile after completion of MPU.
+        """
         upload_id = req.GET.get('uploadId')
 
         try:
