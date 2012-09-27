@@ -442,15 +442,16 @@ class BucketController(object):
                     'true' if len(objects) == (max_keys + 1) else 'false',
                     max_keys,
                     xml_escape(self.container_name),
-                    "".join(['<Contents><Key>%s</Key><LastModified>%sZ</LastModif'\
-                            'ied><ETag>%s</ETag><Size>%s</Size><StorageClass>STA'\
-                            'NDARD</StorageClass></Contents>' %
-                            (xml_escape(i['name']), i['last_modified'][:-3],
-                                                             i['hash'], i['bytes'])
-                               for i in objects[:max_keys] if 'subdir' not in i]),
-                    "".join(['<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>'
-                             % xml_escape(i['subdir'])
+                    "".join(['<Contents><Key>%s</Key><LastModified>%sZ</Last'\
+                             'Modified><ETag>%s</ETag><Size>%s</Size><Storage'\
+                             'Class>STANDARD</StorageClass></Contents>' %
+                             (xml_escape(i['name']), i['last_modified'][:-3],
+                                                         i['hash'], i['bytes'])
+                            for i in objects[:max_keys] if 'subdir' not in i]),
+                    "".join(['<CommonPrefixes><Prefix>%s</Prefix></Common'\
+                             'Prefixes>' % xml_escape(i['subdir'])
                              for i in objects[:max_keys] if 'subdir' in i])))
+
             return Response(body=body, content_type='application/xml')
 
     def PUT(self, req):
@@ -826,6 +827,7 @@ class MultiPartObjectController(object):
         """
         Called if POST with 'uploads' query string was received.
         Creates metafile which is used as a flag on uncompleted MPU.
+        Initiates multipart upload.
         """
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -879,7 +881,8 @@ class MultiPartObjectController(object):
                 return get_err_response('InvalidURI')
 
         body = ('<?xml version="1.0" encoding="UTF-8"?>'
-                '<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<InitiateMultipartUploadResult '\
+                'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
                 '<Bucket>%s</Bucket>'
                 '<Key>%s</Key>'
                 '<UploadId>%s</UploadId>'
@@ -894,6 +897,7 @@ class MultiPartObjectController(object):
         """
         Called if POST with 'uploadId' query string was received.
         Deletes metafile after completion of MPU.
+        Completes multipart upload.
         """
         upload_id = req.GET.get('uploadId')
 
@@ -962,7 +966,8 @@ class MultiPartObjectController(object):
                 return get_err_response('InvalidURI')
 
         body = ('<?xml version="1.0" encoding="UTF-8"?>'
-                '<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+                '<CompleteMultipartUploadResult '\
+                'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
                 '<Location>%s</Location>'
                 '<Bucket>%s</Bucket>'
                 '<Key>%s</Key>'
