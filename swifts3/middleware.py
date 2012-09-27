@@ -696,6 +696,9 @@ class MultiPartObjectController(object):
         """
         Lists multipart uploads by uploadId.
         """
+        # any operations with multipart buckets are not allowed to user
+        check_container_name_no_such_bucket_error(self.container_name)
+
         upload_id = req.GET.get('uploadId')
         max_parts = req.GET.get('max-parts', '1000')
         part_number_marker = req.GET.get('part-number-marker', '')
@@ -709,9 +712,6 @@ class MultiPartObjectController(object):
             return get_err_response('InvalidURI')
 
         object_name_prefix_len = len(self.object_name) + 1
-
-        # any operations with multipart buckets are not allowed to user
-        check_container_name_no_such_bucket_error(self.container_name)
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -1096,9 +1096,11 @@ class MultiPartObjectController(object):
             obj_resp = obj_req.get_response(self.app)
             status = obj_resp.status_int
 
-            if status not in (204, 200):
+            if status not in (200, 204):
                 if status == 401:
                     return get_err_response('AccessDenied')
+                elif status == 404:
+                    return get_err_response('NoSuchKey')
                 else:
                     return get_err_response('InvalidURI')
 
