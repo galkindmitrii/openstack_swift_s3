@@ -209,6 +209,18 @@ def canonical_string(req):
     return buf
 
 
+def check_container_name_no_such_bucket_error(container_name):
+    """Checks that user do not tries to operate with MPU container"""
+    if container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+        return get_err_response('NoSuchBucket')
+
+
+def check_container_name_invalid_bucket_name_error(container_name):
+    """Checks that user do not tries to operate with MPU container"""
+    if container_name.startswith(MULTIPART_UPLOAD_PREFIX):
+        return get_err_response('InvalidBucketName')
+
+
 class ServiceController(object):
     """
     Handles account level requests.
@@ -249,8 +261,7 @@ class ServiceController(object):
                          not i['name'].startswith(MULTIPART_UPLOAD_PREFIX)]))
                          # we shold not show multipart buckets here
 
-        resp = Response(status=200, content_type='application/xml', body=body)
-        return resp
+        return Response(status=200, content_type='application/xml', body=body)
 
 
 class BucketController(object):
@@ -265,124 +276,122 @@ class BucketController(object):
         env['HTTP_X_AUTH_TOKEN'] = token
         env['PATH_INFO'] = '/v1/%s/%s' % (account_name, container_name)
 
+    def get_uploads(self, req):
+        """Handles listing of in-progress multipart uploads"""
+        acl = req.GET.get('acl')
+        params = MultiDict([('format', 'json')])
+        max_uploads = req.GET.get('max-uploads')
+        if (max_uploads is not None and max_uploads.isdigit()):
+            max_uploads = min(int(max_uploads), MAX_UPLOADS_LISTING)
+        else:
+            max_uploads = MAX_UPLOADS_LISTING
+        params['limit'] = str(max_uploads + 1)
+        for param_name in ('key-marker', 'prefix', 'delimiter',
+                                                       'upload-id-marker'):
+            if param_name in req.GET:
+                params[param_name] = req.GET[param_name]
+
+        cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
+        cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
+
+        req.upath_info = cont_path
+        req.GET.clear()
+        req.GET.update(params)
+
+        resp = req.get_response(self.app)
+        status = resp.status_int
+
+        if status != 200:
+            if status == 401:
+                return get_err_response('AccessDenied')
+            elif status == 404:
+                return get_err_response('InvalidBucketName')
+            else:
+                return get_err_response('InvalidURI')
+
+        if acl is not None:
+            return get_acl(self.account_name)
+
+        objects = json.loads(resp.body)
+        uploads = ''
+        splited_name = ''
+
+        for obj in objects:
+            if obj['name'].endswith('/meta'):
+                splited_name = obj['name'].split('/')
+                uploads = uploads.join(
+                                 "<Upload>"
+                                 "<Key>%s</Key>"
+                                 "<UploadId>%s</UploadId>"
+                                 "<Initiator>"
+                                 "<ID>%s</ID>"
+                                 "<DisplayName>%s</DisplayName>"
+                                 "</Initiator>"
+                                 "<Owner>"
+                                 "<ID>%s</ID>"
+                                 "<DisplayName>%s</DisplayName>"
+                                 "</Owner>"
+                                 "<StorageClass>STANDARD</StorageClass>"
+                                 "<Initiated>%sZ</Initiated>"
+                                 "</Upload>" % (
+                                 splited_name[0],
+                                 splited_name[1],
+                                 self.account_name,
+                                 self.account_name,
+                                 self.account_name,
+                                 self.account_name,
+                                 obj['last_modified'][:-3]))
+            else:
+                objects.remove(obj)
+
+        #TODO: Currently there are less then max_uploads results
+        # in response; Amount of uploads == amount of meta files
+        # received in a request for a list of objects in bucket.
+
+        if len(objects) == (max_uploads + 1):
+            is_truncated = 'true'
+            next_key_marker = splited_name[0]
+            next_uploadId_marker = splited_name[1]
+        else:
+            is_truncated = 'false'
+            next_key_marker = next_uploadId_marker = ''
+
+        body = ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<ListMultipartUploadsResult '
+                'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+            '<Bucket>%s</Bucket>'
+            '<KeyMarker>%s</KeyMarker>'
+            '<UploadIdMarker>%s</UploadIdMarker>'
+            '<NextKeyMarker>%s</NextKeyMarker>'
+            '<NextUploadIdMarker>%s</NextUploadIdMarker>'
+            '<MaxUploads>%s</MaxUploads>'
+            '<IsTruncated>%s</IsTruncated>'
+            '%s'
+            '</ListMultipartUploadsResult>' %
+                (
+                    xml_escape(self.container_name),
+                    xml_escape(params.get('key-marker', '')),
+                    xml_escape(params.get('upload-id-marker', '')),
+                    next_key_marker,
+                    next_uploadId_marker,
+                    max_uploads,
+                    is_truncated,
+                    uploads
+                )
+            )
+        return Response(body=body, content_type='application/xml')
+
     def GET(self, req):
         """
         Handles listing of in-progress multipart uploads,
         handles list objects request.
         """
+        # any operations with multipart buckets are not allowed to user
+        check_container_name_no_such_bucket_error(self.container_name)
+
         if 'uploads' in req.GET:
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('NoSuchBucket')
-
-            acl = req.GET.get('acl')
-            params = MultiDict([('format', 'json')])
-            max_uploads = req.GET.get('max-uploads')
-            if (max_uploads is not None and max_uploads.isdigit()):
-                max_uploads = min(int(max_uploads), MAX_UPLOADS_LISTING)
-            else:
-                max_uploads = MAX_UPLOADS_LISTING
-            params['limit'] = str(max_uploads + 1)
-            for param_name in ('key-marker', 'prefix', 'delimiter',
-                                                           'upload-id-marker'):
-                if param_name in req.GET:
-                    params[param_name] = req.GET[param_name]
-
-            cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
-            cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
-
-            req.upath_info = cont_path
-            req.GET.clear()
-            req.GET.update(params)
-
-            resp = req.get_response(self.app)
-            status = resp.status_int
-
-            if status != 200:
-                if status == 401:
-                    return get_err_response('AccessDenied')
-                elif status == 404:
-                    return get_err_response('InvalidBucketName')
-                else:
-                    return get_err_response('InvalidURI')
-
-            if acl is not None:
-                return get_acl(self.account_name)
-
-            objects = json.loads(resp.body)
-            uploads = ''
-            splited_name = ''
-
-            for obj in objects:
-                if obj['name'].endswith('/meta'):
-                    splited_name = obj['name'].split('/')
-                    uploads = uploads.join(
-                                     "<Upload>"
-                                     "<Key>%s</Key>"
-                                     "<UploadId>%s</UploadId>"
-                                     "<Initiator>"
-                                     "<ID>%s</ID>"
-                                     "<DisplayName>%s</DisplayName>"
-                                     "</Initiator>"
-                                     "<Owner>"
-                                     "<ID>%s</ID>"
-                                     "<DisplayName>%s</DisplayName>"
-                                     "</Owner>"
-                                     "<StorageClass>STANDARD</StorageClass>"
-                                     "<Initiated>%sZ</Initiated>"
-                                     "</Upload>" % (
-                                     splited_name[0],
-                                     splited_name[1],
-                                     self.account_name,
-                                     self.account_name,
-                                     self.account_name,
-                                     self.account_name,
-                                     obj['last_modified'][:-3]))
-                else:
-                    objects.remove(obj)
-
-            #TODO: Currently there are less then max_uploads results
-            # in response; Amount of uploads == amount of meta files
-            # received in a request for a list of objects in bucket.
-
-            if len(objects) == (max_uploads + 1):
-                is_truncated = 'true'
-                next_key_marker = splited_name[0]
-                next_uploadId_marker = splited_name[1]
-            else:
-                is_truncated = 'false'
-                next_key_marker = next_uploadId_marker = ''
-
-            body = ('<?xml version="1.0" encoding="UTF-8"?>'
-                '<ListMultipartUploadsResult '
-                    'xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
-                '<Bucket>%s</Bucket>'
-                '<KeyMarker>%s</KeyMarker>'
-                '<UploadIdMarker>%s</UploadIdMarker>'
-                '<NextKeyMarker>%s</NextKeyMarker>'
-                '<NextUploadIdMarker>%s</NextUploadIdMarker>'
-                '<MaxUploads>%s</MaxUploads>'
-                '<IsTruncated>%s</IsTruncated>'
-                '%s'
-                '</ListMultipartUploadsResult>' %
-                    (
-                        xml_escape(self.container_name),
-                        xml_escape(params.get('key-marker', '')),
-                        xml_escape(params.get('upload-id-marker', '')),
-                        next_key_marker,
-                        next_uploadId_marker,
-                        max_uploads,
-                        is_truncated,
-                        uploads
-                    )
-                )
-            return Response(body=body, content_type='application/xml')
-
+            return self.get_uploads(req)
         else:
-            # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('NoSuchBucket')
-
             acl = req.GET.get('acl')
             params = MultiDict([('format', 'json')])
             max_keys = req.GET.get('max-keys')
@@ -449,8 +458,7 @@ class BucketController(object):
         Handles PUT Bucket request.
         """
         # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('InvalidBucketName')
+        check_container_name_invalid_bucket_name_error(self.container_name)
 
         resp = req.get_response(self.app)
         status = resp.status_int
@@ -546,8 +554,7 @@ class BucketController(object):
         Aborts all multipart uploads initiated for this bucket.
         """
         # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('NoSuchBucket')
+        check_container_name_no_such_bucket_error(self.container_name)
 
         # deleting regular bucket,
         # request is copied to save valid authorization
@@ -704,8 +711,7 @@ class MultiPartObjectController(object):
         object_name_prefix_len = len(self.object_name) + 1
 
         # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('NoSuchBucket')
+        check_container_name_no_such_bucket_error(self.container_name)
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -822,8 +828,7 @@ class MultiPartObjectController(object):
         """
         if 'uploads' in req.GET:
             # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('InvalidBucketName')
+            check_container_name_invalid_bucket_name_error(self.container_name)
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -896,8 +901,7 @@ class MultiPartObjectController(object):
                 return get_err_response('InvalidURI')
 
             # any operations with multipart buckets are not allowed to user
-            if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-                return get_err_response('InvalidBucketName')
+            check_container_name_invalid_bucket_name_error(self.container_name)
 
             cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
             cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -991,8 +995,7 @@ class MultiPartObjectController(object):
             return get_err_response('InvalidURI')
 
         # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('InvalidBucketName')
+        check_container_name_invalid_bucket_name_error(self.container_name)
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -1047,8 +1050,7 @@ class MultiPartObjectController(object):
             return get_err_response('InvalidURI')
 
         # any operations with multipart buckets are not allowed to user
-        if self.container_name.startswith(MULTIPART_UPLOAD_PREFIX):
-            return get_err_response('NoSuchBucket')
+        check_container_name_no_such_bucket_error(self.container_name)
 
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
