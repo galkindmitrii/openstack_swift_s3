@@ -35,8 +35,8 @@ look at swift requests (like rate limiting).
 To set up your client, the access key will be the concatenation of the
 account and user strings that should look like test:tester, and the
 secret access key is the account password.  The host should also point
-to the swift storage hostname.  It also will have to use the old style
-calling format, and not the hostname based container format.
+to the swift storage hostname. It should also use the old style
+calling format, not the hostname based container format.
 
 Note that all the operations with multipart upload buckets are denied
 to user, as well as multipart buckets are not listed in all buckets list.
@@ -73,8 +73,8 @@ import simplejson as json
 from swift.common.utils import split_path, get_logger
 
 
-#XXX: In webob-1.9b copied environ contained link to original
-#     instance of TrackableMultiDict which reflect to original
+#XXX: In webob-1.9b copied environment contained link to the original
+#     instance of a TrackableMultiDict which reflects to original
 #     request.
 class Request(WebObRequest):
     def _remove_query_vars(self):
@@ -345,8 +345,8 @@ class BucketController(object):
                 objects.remove(obj)
 
         #TODO: Currently there are less then max_uploads results
-        # in response; Amount of uploads == amount of meta files
-        # received in a request for a list of objects in bucket.
+        # in a response; Amount of uploads == amount of meta files
+        # received in a request for a list of objects in a bucket.
 
         if len(objects) == (max_uploads + 1):
             is_truncated = 'true'
