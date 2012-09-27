@@ -108,7 +108,7 @@ qsa_of_interest = ['acl', 'defaultObjectAcl', 'location', 'logging',
 def get_err_response(code):
     """
     Creates a properly formatted xml error response by a
-    given an HTTP response code,
+    given HTTP response code,
 
     :param code: error code
     :returns: webob.response object
@@ -1052,7 +1052,7 @@ class MultiPartObjectController(object):
 
     def DELETE(self, req):
         """
-        Abort multipart upload by uploadId.
+        Aborts multipart upload by uploadId.
         """
         upload_id = req.GET.get('uploadId')
 
@@ -1094,7 +1094,14 @@ class MultiPartObjectController(object):
             obj_req.GET.clear()
 
             obj_resp = obj_req.get_response(self.app)
-            # TODO: check status end return special response.
+            status = obj_resp.status_int
+
+            if status not in (204, 200):
+                if status == 401:
+                    return get_err_response('AccessDenied')
+                else:
+                    return get_err_response('InvalidURI')
+
         return Response(status=204)
 
 
