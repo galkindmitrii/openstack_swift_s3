@@ -394,6 +394,26 @@ class TestSwift3(unittest.TestCase):
             resp = local_app(req.environ, local_app.app.do_start_response)
             self.assertEquals(local_app.app.response_args[0].split()[0], '204')
 
+    def test_bucket_DELETE_mpu(self):
+        class FakeObjects(object):
+            status_int = 200
+            body = simplejson.dumps([{'name': 'some_name/meta'},
+                                     {'name': 'some_name'}])
+            headers = {"test": "test"}
+
+        local_app = swift3.filter_factory({})(FakeAppBucket(204))
+        req = Request.blank('/bucket',
+                            environ={'REQUEST_METHOD': 'DELETE'},
+                            headers={'Authorization': 'AWS test:tester:hmac'})
+        with mock.patch('webob.Request.get_response') as mocked:
+            with mock.patch('swifts3.middleware.BucketController'
+                       '.mpu_bucket_deletion_list_request') as mocked_list_req:
+                mocked.return_value = Response(status=204)
+                mocked_list_req.return_value = FakeObjects()
+                resp = local_app(req.environ, local_app.app.do_start_response)
+                self.assertEquals(local_app.app.response_args[0].split()[0],
+                                                                        '204')
+
     def _check_acl(self, owner, resp):
         dom = xml.dom.minidom.parseString("".join(resp))
         self.assertEquals(dom.firstChild.nodeName, 'AccessControlPolicy')
