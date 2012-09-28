@@ -490,6 +490,15 @@ class BucketController(object):
         resp.status = 200
         return resp
 
+    def mpu_bucket_deletion_list_request(self, req, cont_path):
+        """This method returns listing of MPU bucket for deletion"""
+        list_req = req.copy()
+        list_req.method = 'GET'
+        list_req.upath_info = cont_path
+        list_req.GET.clear()
+        list_req.GET['format'] = 'json'
+        return list_req.get_response(self.app)
+
     def mpu_bucket_deletion(self, req):
         """
         This method checks if MPU bucket exists and
@@ -499,13 +508,7 @@ class BucketController(object):
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
 
-        list_req = req.copy()
-        list_req.method = 'GET'
-        list_req.upath_info = cont_path
-        list_req.GET.clear()
-        list_req.GET['format'] = 'json'
-
-        list_resp = list_req.get_response(self.app)
+        list_resp = self.mpu_bucket_deletion_list_request(req, cont_path)
         status = list_resp.status_int
 
         if status != 200:
