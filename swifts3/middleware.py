@@ -221,6 +221,19 @@ def check_container_name_invalid_bucket_name_error(container_name):
         return get_err_response('InvalidBucketName')
 
 
+def meta_request_head(req, meta_path, app):
+    """
+    HEAD request to check that meta file presents and
+    multipart upload is in progress.
+    """
+    meta_req = req.copy()
+    meta_req.method = 'HEAD'
+    meta_req.body = ''
+    meta_req.upath_info = meta_path
+    meta_req.GET.clear()
+    return meta_req.get_response(app)
+
+
 class ServiceController(object):
     """
     Handles account level requests.
@@ -481,7 +494,7 @@ class BucketController(object):
         """
         This method checks if MPU bucket exists and
         if there are any active MPUs are in it.
-        MPUs are aborted, parts are deleted.
+        MPUs are aborted, uploaded parts are deleted.
         """
         cont_name = MULTIPART_UPLOAD_PREFIX + self.container_name
         cont_path = "/v1/%s/%s/" % (self.account_name, cont_name)
@@ -721,13 +734,7 @@ class MultiPartObjectController(object):
                                       self.object_name,
                                       upload_id)
 
-        meta_req = req.copy()
-        meta_req.method = 'HEAD'
-        meta_req.body = ''
-        meta_req.upath_info = meta_path
-        meta_req.GET.clear()
-
-        meta_resp = meta_req.get_response(self.app)
+        meta_resp = meta_request_head(req, meta_path, self.app)
         status = meta_resp.status_int
 
         if status != 200:
@@ -823,6 +830,27 @@ class MultiPartObjectController(object):
                         body=body,
                         content_type='application/xml')
 
+    def post_uploads_container_request(self, req, cont_path):
+        """Method used to create a container for MPU."""
+        cont_req = req.copy()
+        cont_req.method = 'PUT'
+        cont_req.upath_info = cont_path
+        cont_req.GET.clear()
+        return cont_req.get_response(self.app)
+
+    def post_uploads_put_meta_req(self, req, cont_path, upload_id):
+        """Method to create a MPU metafile."""
+        meta_req = req.copy()
+        meta_req.method = 'PUT'
+        meta_req.upath_info = "%s%s/%s/meta" % (cont_path,
+                                                self.object_name,
+                                                upload_id)
+        for header, value in meta_req.headers.items():
+            if header.lower().startswith('x-amz-meta-'):
+                meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = \
+                                                                      value
+        return meta_req.get_response(self.app)
+
     def post_uploads(self, req):
         """
         Called if POST with 'uploads' query string was received.
@@ -841,12 +869,8 @@ class MultiPartObjectController(object):
         status = cont_resp.status_int
 
         if status == 404:
-            cont_req = req.copy()
-            cont_req.method = 'PUT'
-            cont_req.upath_info = cont_path
-            cont_req.GET.clear()
-
-            cont_resp = cont_req.get_response(self.app)
+            # creating container for MPU
+            cont_resp = self.post_uploads_container_request(req, cont_path)
             status = cont_resp.status_int
 
         if status not in (201, 204):
@@ -859,17 +883,7 @@ class MultiPartObjectController(object):
 
         upload_id = uuid.uuid4().hex
 
-        meta_req = req.copy()
-        meta_req.method = 'PUT'
-        meta_req.upath_info = "%s%s/%s/meta" % (cont_path,
-                                                self.object_name,
-                                                upload_id)
-        for header, value in meta_req.headers.items():
-            if header.lower().startswith('x-amz-meta-'):
-                meta_req.headers['X-Object-Meta-Amz-' + header[11:]] = \
-                                                                      value
-
-        meta_resp = meta_req.get_response(self.app)
+        meta_resp = self.post_uploads_put_meta_req(req, cont_path, upload_id)
         status = meta_resp.status_int
 
         if status != 201:
@@ -912,13 +926,7 @@ class MultiPartObjectController(object):
                                       self.object_name,
                                       upload_id)
 
-        meta_req = req.copy()
-        meta_req.method = 'HEAD'
-        meta_req.body = ''
-        meta_req.upath_info = meta_path
-        meta_req.GET.clear()
-
-        meta_resp = meta_req.get_response(self.app)
+        meta_resp = meta_request_head(req, meta_path, self.app)
         status = meta_resp.status_int
 
         if status != 200:
@@ -1019,13 +1027,7 @@ class MultiPartObjectController(object):
 
         meta_path = "%s%s/%s/meta" % (cont_path, self.object_name, upload_id)
 
-        meta_req = req.copy()
-        meta_req.method = 'HEAD'
-        meta_req.body = ''
-        meta_req.upath_info = meta_path
-        meta_req.GET.clear()
-
-        meta_resp = meta_req.get_response(self.app)
+        meta_resp = meta_request_head(req, meta_path, self.app)
         status = meta_resp.status_int
 
         if status != 200:
