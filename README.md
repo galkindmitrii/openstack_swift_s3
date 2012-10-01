@@ -18,6 +18,7 @@ The following opperations are currently supported:
 To add this middleware to your configuration, add the swifts3 middleware
 before the auth middleware and before any other middleware that
 waits for swift requests (like rate limiting).
+Example can be found in etc/proxy-server.conf-sample
 
 To set up your client, the access key will be the concatenation of the
 account and user strings that should look like test:tester, and the
