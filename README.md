@@ -36,3 +36,5 @@ following for a SAIO setup:
         host='127.0.0.1',
         is_secure=False,
         calling_format=boto.s3.connection.OrdinaryCallingFormat())
+
+Please check the Wiki section for more information.
